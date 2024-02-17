@@ -44,8 +44,9 @@ def test_process(classifiers, loader):
         # print("test_batch: {}, img_num: {}".format(batch_num, labels.size(0)))
         # for i in range(len(classifiers)):
             # print("classifier: {}, old_acc: {}, new_acc: {}".format(i, old_acc[i], new_acc[i]))
-        perts = pert_to_norm(adv_imgs - imgs)
+        # perts = pert_to_norm(adv_imgs - imgs)
         # perts = norm_to_pert(perts)
+        perts = adv_imgs - imgs
         channels_sum += torch.mean(perts, dim=[0,2,3])
         channels_squared_sum += torch.mean(perts ** 2, dim=[0,2,3])
         n_batchs += 1
