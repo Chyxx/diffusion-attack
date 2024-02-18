@@ -17,6 +17,8 @@ def attack(model, classifier, mode=0, estimator=None):
     wind = Visdom()
     model.eval()
     classifier.eval()
+    if estimator is not None:
+        estimator.eval()
     device = torch.device("cuda")
     batch_size = 64
     loader, _loader = tiny_loader(root=opt.data_path, batch_size=batch_size, shuffle=True)
@@ -30,7 +32,7 @@ def attack(model, classifier, mode=0, estimator=None):
                 new_pred = classifier(clp(perts + imgs))
                 old_pred_arg = classifier(imgs).argmax(dim=1)
                 f = DAloss(new_pred, old_pred_arg, perts) * x.size(0)
-                res = -1 * torch.autograd.grad(f, x_in)[0] * opt.grad_scale * 100
+                res = -1 * torch.autograd.grad(f, x_in)[0] * opt.grad_scale * 30
             # print(res)
             return res
         elif mode == 2:
@@ -38,7 +40,7 @@ def attack(model, classifier, mode=0, estimator=None):
                 x_in = x.detach().requires_grad_(True)
                 perts = norm_to_pert(x_in)
                 l2Loss = torch.nn.functional.mse_loss(perts, torch.zeros_like(x)) * x.size(0)
-            res = -1 * (estimator(x, t, imgs, labels) + torch.autograd.grad(l2Loss, x_in)[0] * opt.gamma) * opt.grad_scale * 100
+            res = -1 * (estimator(x, t, imgs, labels) * 1e-3 + torch.autograd.grad(l2Loss, x_in)[0] * opt.gamma) * opt.grad_scale * 30
             # return -1 * torch.zeros_like(x)
             # print(res)
             # with torch.enable_grad():

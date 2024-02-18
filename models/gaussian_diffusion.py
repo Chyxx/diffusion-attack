@@ -13,7 +13,7 @@ import torch as th
 
 from .nn import mean_flat
 from utils.losses import normal_kl, discretized_gaussian_log_likelihood
-from utils.func_util import untargeted_func, norm_to_pert
+from utils.func_util import untargeted_func, norm_to_pert, DAloss, clp
 from config import opt
 
 
@@ -1039,7 +1039,7 @@ class SD(SpacedDiffusion):
         steps = 1000
         sigma_small = False
         noise_schedule = opt.noise_schedule
-        use_kl = False
+        use_kl = opt.use_kl
         predict_xstart = False
         rescale_timesteps = False
         rescale_learned_sigmas = False
@@ -1077,8 +1077,22 @@ class DiffusionD(SD):
     def __init__(self):
         super().__init__(learn_sigma=opt.learn_sigma)
 
-    def compute_losses(self, model, x_start, imgs, t, labels):
-        return super().training_losses(model, x_start, t, model_kwargs={"imgs": imgs, "labels": labels})["loss"]
+    def compute_losses(self, model, x_start, imgs, t, labels, mode, classifiers):
+        if mode == 0:
+            return super().training_losses(model, x_start, t, model_kwargs={"imgs": imgs, "labels": labels})["loss"]
+        elif mode == 1:
+            noise = th.randn_like(x_start)
+            x_t = self.q_sample(x_start, t, noise=noise)
+            old_pred_arg = [c(imgs).argmax(dim=1) for c in classifiers]
+            with th.enable_grad():
+                model_output = self._wrap_model(model)(x_t, self._scale_timesteps(t), imgs=imgs, labels=labels)
+                x_start = self._predict_xstart_from_eps(x_t, t, model_output)
+                perts_start = norm_to_pert(x_start)
+                new_pred = [c(imgs + perts_start) for c in classifiers]
+                loss = 0
+                for i in range(len(classifiers)):
+                    loss = loss + DAloss(new_pred[i], old_pred_arg[i], perts_start) / len(classifiers)
+            return loss
 
 
 class EstimatorD(SD):
@@ -1098,5 +1112,5 @@ class EstimatorD(SD):
             f = 0
             for i in range(len(classifiers)):
                 f = f + untargeted_func(new_pred[i], old_pred_arg[i]).sum() / len(classifiers)
-        target = th.autograd.grad(f, x_t)[0]
+        target = th.autograd.grad(f, x_t)[0] * 1e3
         return mean_flat((target - model_output) ** 2)
